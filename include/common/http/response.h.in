@@ -1,0 +1,35 @@
+#ifndef SLIM_COMMON_HTTP_RESPONSE_H
+#define SLIM_COMMON_HTTP_RESPONSE_H
+#include <cstdint>
+#include <span>
+#include <string>
+#include <string_view>
+
+#include <slim/common/http/headers.h>
+#include <slim/SlimValue.hpp>
+
+#define SLIMCOMMONHTTPRESPONSE_VERSION  "@SLIMCOMMONHTTPRESPONSE_VERSION@"
+#define SLIMCOMMONHTTPRESPONSE_GIT_HASH "@SLIMCOMMONHTTPRESPONSE_GIT_HASH@"
+
+namespace slim::common::http {
+	struct Response {
+		Response();
+		Response(std::span<const uint8_t> _storage_container);
+
+		slim::slim_storage_container body() const;
+		Headers& headers();
+		int response_code() const;
+		void response_code(const int _code);
+		std::string_view response_code_string() const;
+		void response_code_text(std::string_view _string);
+		
+	private:
+		slim::slim_storage_container _body;
+		int                          _response_code = 0;
+		std::string                  _response_code_string;
+		Headers                      _headers_map;
+		
+		void _parse(std::span<const uint8_t> _storage_container);
+	};
+}
+#endif
