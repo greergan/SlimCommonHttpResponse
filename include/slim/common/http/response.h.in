@@ -29,7 +29,7 @@ namespace slim::common::http {
 		std::string                  _response_code_string;
 		Headers                      _headers_map;
 		
-		void _parse(std::span<const uint8_t> _storage_container);
+		slim::SlimValue _parse(std::span<const uint8_t> _storage_container);
 	};
 }
 #endif
