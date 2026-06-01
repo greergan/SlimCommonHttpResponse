@@ -1,3 +1,2 @@
 # PackageName [minVersion [maxVersion]]
-SlimCommonHttpUrl
-SlimCommonLog
+SlimCommonHttpHeaders 0.1.3
