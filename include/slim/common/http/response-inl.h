@@ -16,15 +16,12 @@ namespace slim::common::http {
 namespace HWY_NAMESPACE {
 namespace hn = hwy::HWY_NAMESPACE;
 
-//HWY_ATTR slim::ErrorInfo parse_headers(
-slim::ErrorInfo parse_headers(
+HWY_ATTR slim::ErrorInfo parse_headers(
     std::string_view raw,
     size_t           start,
     Headers&         out,
     size_t&          body_start)
 {
-    // Declared inside the function so it is re-defined cleanly on each target
-    // pass with no cross-pass collision.
     enum class State : uint8_t {
         scan_key,
         scan_value,
