@@ -39,19 +39,13 @@ namespace {
         auto [ptr, ec] = std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), code);
 
         if (ec == std::errc::invalid_argument)
-            return slim::ErrorInfo(static_cast<int>(ec),
-                std::format("{} => status code is not a number: '{}'", __func__, code_sv));
+            return slim::ErrorInfo(static_cast<int>(ec), std::format("{} => response is unparsable => error code => {}", __func__, static_cast<int>(ec)));
 
-        // Use code_sv here — 'code' is uninitialised on this path.
         if (ec == std::errc::result_out_of_range)
-            return slim::ErrorInfo(static_cast<int>(ec),
-                std::format("{} => status code unrepresentable: '{}'", __func__, code_sv));
+            return slim::ErrorInfo(static_cast<int>(ec), std::format("{} => response code out of range => {} should be > 99 and < 600", __func__, code_sv));
 
-        // Valid HTTP status codes are 100-599. The original used > 511 (arbitrary)
-        // and its error message contradicted the condition.
         if (code < 100 || code > 599)
-            return slim::ErrorInfo(std::format(
-                "{} => status code out of range: {} (must be 100-599)", __func__, code));
+            return slim::ErrorInfo(std::format("{} => response code out of range => {} should be > 99  and < 600", __func__, code));
 
         out.version   = line.substr(0, first_space);
         out.code      = code;
@@ -73,8 +67,6 @@ namespace {
         r.error_info = parse_status_line(raw, status, headers_start);
         if (r.error_info.has_error()) return;
 
-        // Initialise defensively — parse_headers only writes body_start on
-        // the success path.
         size_t body_start = storage.size();
 
         r.error_info = HWY_DYNAMIC_DISPATCH(parse_headers)(raw, headers_start, r.headers, body_start);
@@ -101,4 +93,4 @@ namespace {
         return error_info.has_error();
     }
 
-} // namespace slim::common::http
+}
