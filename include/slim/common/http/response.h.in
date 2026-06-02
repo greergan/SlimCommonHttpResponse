@@ -25,9 +25,6 @@ namespace slim::common::http {
         std::string                  http_version;
         Headers                      headers;
         slim::ErrorInfo              error_info;
-
-		private:
-        	void parse(std::span<const uint8_t> storage);
     };
 }
 
