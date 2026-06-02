@@ -99,10 +99,8 @@ HWY_ATTR slim::ErrorInfo parse_headers(
                     state = State::seen_cr;
                     ++pos;
                 }
-
                 else if (byte == ' ' || byte == '\t') {
-                    return slim::ErrorInfo(std::format(
-                        "{} => obsolete line folding is not supported", __func__));
+                    return slim::ErrorInfo("obsolete line folding is not supported");
                 }
                 else {
                     ++pos;
@@ -133,7 +131,7 @@ HWY_ATTR slim::ErrorInfo parse_headers(
                     }
                 }
                 else {
-                    return slim::ErrorInfo(std::format("{} => bare CR in headers", __func__));
+                    return slim::ErrorInfo("bare CR in headers");
                 }
                 break;
 
@@ -143,12 +141,12 @@ HWY_ATTR slim::ErrorInfo parse_headers(
                     return {};
                 }
                 else {
-                    return slim::ErrorInfo(std::format("{} => malformed header terminator", __func__));
+                    return slim::ErrorInfo("malformed header terminator");
                 }
         }
     }
 
-    return slim::ErrorInfo(std::format("{} => headers not terminated", __func__));
+    return slim::ErrorInfo("headers not terminated");
 }
 }
 }

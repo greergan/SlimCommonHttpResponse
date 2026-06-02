@@ -21,31 +21,28 @@ namespace {
     slim::ErrorInfo parse_status_line(std::string_view raw, StatusLine& out, size_t& headers_start) {
         size_t line_end = raw.find("\r\n");
         if (line_end == std::string_view::npos)
-            return slim::ErrorInfo(std::format("{} => response is unparsable", __func__));
+            return slim::ErrorInfo("response is unparsable");
 
         std::string_view line = raw.substr(0, line_end);
 
         size_t first_space = line.find(' ');
         if (first_space == std::string_view::npos)
-            return slim::ErrorInfo(std::format("{} => response is unparsable", __func__));
+            return slim::ErrorInfo("response is unparsable");
 
         std::string_view after_version = line.substr(first_space + 1);
         size_t second_space            = after_version.find(' ');
         if (second_space == std::string_view::npos)
-            return slim::ErrorInfo(std::format("{} => response is unparsable", __func__));
+            return slim::ErrorInfo("response is unparsable");
 
         std::string_view code_sv = after_version.substr(0, second_space);
-        int code;
-        auto [ptr, ec] = std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), code);
+        int code                 = 0;
+        auto [ptr, ec]           = std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), code);
 
-        if (ec == std::errc::invalid_argument)
-            return slim::ErrorInfo(static_cast<int>(ec), std::format("{} => response is unparsable => error code => {}", __func__, static_cast<int>(ec)));
-
-        if (ec == std::errc::result_out_of_range)
-            return slim::ErrorInfo(static_cast<int>(ec), std::format("{} => response code out of range => {} should be > 99 and < 600", __func__, code_sv));
+        if (ec != std::errc{})
+            return slim::ErrorInfo(static_cast<int>(ec), std::format("failed to parse status code '{}'", code_sv));
 
         if (code < 100 || code > 599)
-            return slim::ErrorInfo(std::format("{} => response code out of range => {} should be > 99  and < 600", __func__, code));
+            return slim::ErrorInfo(std::format("response code out of range => {} should be > 99 and < 600", code));
 
         out.version   = line.substr(0, first_space);
         out.code      = code;
