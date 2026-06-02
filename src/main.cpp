@@ -2,7 +2,6 @@
 #include "hwy/foreach_target.h"
 #undef HWY_TARGET_INCLUDE
 #include "slim/common/http/response-inl.h"
-
 #include <charconv>
 #include <format>
 #include <slim/common/http/response.h>
@@ -74,8 +73,13 @@ namespace {
         r.http_version = status.version;
 
         if (body_start < storage.size()) {
-            auto body_span = storage.subspan(body_start);
-            r.body = slim::slim_storage_container(body_span.begin(), body_span.end());
+            if(r.headers.get("transfer-encoding") == "chunked") {
+
+            }
+            else {
+                auto body_span = storage.subspan(body_start);
+                r.body = slim::slim_storage_container(body_span.begin(), body_span.end());
+            }
         }
     }
 }

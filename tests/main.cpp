@@ -97,3 +97,27 @@ TEST_CASE("Non-numeric response code", "[response]") {
 
     REQUIRE(response.has_error());
 }
+
+TEST_CASE("Transfer encoding of chunked", "[response]") {
+    std::string raw =
+        "HTTP/1.1 200 OK\r\n"
+        "Date: Sun, 31 May 2026 21:16:56 GMT\r\n"
+        "Content-Type: text/html\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: keep-alive\r\n"
+        "Server: cloudflare\r\n"
+        "Last-Modified: Thu, 28 May 2026 04:54:11 GMT\r\n"
+        "Allow: GET, HEAD\r\n"
+        "Accept-Ranges: bytes\r\n"
+        "\r\n"
+        "13\r\n"
+        "<html></html>\r\n"
+        "\r\n"
+        "13\r\n"
+        "<html></html>\r\n"
+        "\r\n";
+    std::vector<uint8_t> body = {60, 104, 116, 109, 108, 62, 60, 47, 104, 116, 109, 108, 62, 60, 104, 116, 109, 108, 62, 60, 47, 104, 116, 109, 108, 62};
+    Response response(to_span(raw));
+    REQUIRE_FALSE(response.has_error());
+    REQUIRE(response.body == body);
+}

@@ -7,7 +7,6 @@
 
 #include "hwy/highway.h"
 
-#include <format>
 #include <slim/common/http/headers.h>
 #include <slim/SlimValue.hpp>
 
