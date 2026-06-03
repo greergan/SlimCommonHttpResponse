@@ -110,14 +110,48 @@ TEST_CASE("Transfer encoding of chunked", "[response]") {
         "Allow: GET, HEAD\r\n"
         "Accept-Ranges: bytes\r\n"
         "\r\n"
-        "13\r\n"
+        "d\r\n"
         "<html></html>\r\n"
-        "\r\n"
-        "13\r\n"
+        "d\r\n"
         "<html></html>\r\n"
+        "0\r\n"
         "\r\n";
+        
     std::vector<uint8_t> body = {60, 104, 116, 109, 108, 62, 60, 47, 104, 116, 109, 108, 62, 60, 104, 116, 109, 108, 62, 60, 47, 104, 116, 109, 108, 62};
     Response response(to_span(raw));
+    
+    REQUIRE_FALSE(response.has_error());
+    REQUIRE(response.body == body);
+}
+
+TEST_CASE("Transfer encoding of complex chunked example", "[response]") {
+    std::string raw =
+        "HTTP/1.1 200 OK\r\n"
+        "Date: Sun, 31 May 2026 21:16:56 GMT\r\n"
+        "Content-Type: text/html\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: keep-alive\r\n"
+        "Server: cloudflare\r\n"
+        "Last-Modified: Thu, 28 May 2026 04:54:11 GMT\r\n"
+        "Allow: GET, HEAD\r\n"
+        "Accept-Ranges: bytes\r\n"
+        "Age: 13533\r\n"
+        "cf-cache-status: HIT\r\n"
+        "CF-RAY: a04900a469a40ad7-LAS\r\n"
+        "\r\n"
+        "210\r\n"
+        "<!doctype html><html lang='en'><head><title>Example Domain</title><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style></head><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.</p><p><a href='https://iana.org/domains/example'>Learn more</a></p></div></body></html>\r\n"
+        "0\r\n"
+        "\r\n";
+
+    std::string html_body = "<!doctype html><html lang='en'><head><title>Example Domain</title><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style></head><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.</p><p><a href='https://iana.org/domains/example'>Learn more</a></p></div></body></html>";
+    
+    std::vector<uint8_t> body(html_body.begin(), html_body.end());
+
+    Response response(to_span(raw));
+    if(response.has_error()) {
+        UNSCOPED_INFO(response.error_info.message());
+    }
     REQUIRE_FALSE(response.has_error());
     REQUIRE(response.body == body);
 }

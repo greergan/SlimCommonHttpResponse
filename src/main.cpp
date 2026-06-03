@@ -2,8 +2,12 @@
 #include "hwy/foreach_target.h"
 #undef HWY_TARGET_INCLUDE
 #include "slim/common/http/response-inl.h"
+
 #include <charconv>
 #include <format>
+#include <algorithm>
+#include <cctype>
+#include <vector>
 #include <slim/common/http/response.h>
 
 namespace slim::common::http {
@@ -17,35 +21,71 @@ namespace {
         std::string_view text;
     };
 
+    bool iequals(std::string_view a, std::string_view b) {
+        return std::ranges::equal(a, b, [](char c1, char c2) {
+            return std::tolower(static_cast<unsigned char>(c1)) == std::tolower(static_cast<unsigned char>(c2));
+        });
+    }
+
+    std::string_view trim_right(std::string_view s) {
+        size_t end = s.find_last_not_of(" \t");
+        return (end == std::string_view::npos) ? "" : s.substr(0, end + 1);
+    }
+
+    // Helper to extract chunked body
+slim::ErrorInfo decode_chunked_body(std::span<const uint8_t> storage, size_t cursor, slim::slim_storage_container& out_body) {
+        while (cursor < storage.size()) {
+            std::string_view rem(reinterpret_cast<const char*>(storage.data() + cursor), storage.size() - cursor);
+            size_t line_end = rem.find("\r\n");
+            if (line_end == std::string_view::npos) return slim::ErrorInfo("incomplete chunked encoding: missing CRLF");
+
+            std::string_view chunk_line = rem.substr(0, line_end);
+            size_t chunk_size = 0;
+            auto [ptr, ec] = std::from_chars(chunk_line.data(), chunk_line.data() + chunk_line.size(), chunk_size, 16);
+            if (ec != std::errc{}) return slim::ErrorInfo(std::format("invalid chunk size hex: {}", chunk_line));
+            if (chunk_size == 0) break;
+
+            cursor += line_end + 2;
+            if (cursor + chunk_size > storage.size()) return slim::ErrorInfo("chunk size exceeds remaining payload length");
+
+            out_body.insert(out_body.end(), storage.data() + cursor, storage.data() + cursor + chunk_size);
+            cursor += chunk_size;
+
+            if (cursor + 2 > storage.size() || storage[cursor] != '\r' || storage[cursor + 1] != '\n')
+                return slim::ErrorInfo("missing CRLF after chunk data");
+            cursor += 2;
+        }
+
+        return {};
+    }
+
     slim::ErrorInfo parse_status_line(std::string_view raw, StatusLine& out, size_t& headers_start) {
         size_t line_end = raw.find("\r\n");
-        if (line_end == std::string_view::npos)
-            return slim::ErrorInfo("response is unparsable");
+        if (line_end == std::string_view::npos) return slim::ErrorInfo("response is unparsable");
 
         std::string_view line = raw.substr(0, line_end);
-
         size_t first_space = line.find(' ');
-        if (first_space == std::string_view::npos)
-            return slim::ErrorInfo("response is unparsable");
+        if (first_space == std::string_view::npos) return slim::ErrorInfo("response is unparsable");
 
         std::string_view after_version = line.substr(first_space + 1);
-        size_t second_space            = after_version.find(' ');
-        if (second_space == std::string_view::npos)
-            return slim::ErrorInfo("response is unparsable");
+        size_t second_space = after_version.find(' ');
+        
+        std::string_view code_sv;
+        if (second_space == std::string_view::npos) {
+            code_sv = after_version;
+            out.text = ""; 
+        } else {
+            code_sv = after_version.substr(0, second_space);
+            out.text = trim_right(after_version.substr(second_space + 1));
+        }
 
-        std::string_view code_sv = after_version.substr(0, second_space);
-        int code                 = 0;
-        auto [ptr, ec]           = std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), code);
+        int code = 0;
+        auto [ptr, ec] = std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), code);
+        if (ec != std::errc{}) return slim::ErrorInfo(static_cast<int>(ec), std::format("failed to parse status code '{}'", code_sv));
+        if (code < 100 || code > 599) return slim::ErrorInfo(std::format("response code out of range => {} should be > 99 and < 600", code));
 
-        if (ec != std::errc{})
-            return slim::ErrorInfo(static_cast<int>(ec), std::format("failed to parse status code '{}'", code_sv));
-
-        if (code < 100 || code > 599)
-            return slim::ErrorInfo(std::format("response code out of range => {} should be > 99 and < 600", code));
-
-        out.version   = line.substr(0, first_space);
-        out.code      = code;
-        out.text      = after_version.substr(second_space + 1);
+        out.version = line.substr(0, first_space);
+        out.code = code;
         headers_start = line_end + 2;
         return {};
     }
@@ -57,26 +97,23 @@ namespace {
         }
 
         std::string_view raw(reinterpret_cast<const char*>(storage.data()), storage.size());
-
         StatusLine status;
         size_t headers_start;
         r.error_info = parse_status_line(raw, status, headers_start);
         if (r.error_info.has_error()) return;
 
         size_t body_start = storage.size();
-
         r.error_info = HWY_DYNAMIC_DISPATCH(parse_headers)(raw, headers_start, r.headers, body_start);
         if (r.error_info.has_error()) return;
 
-        r.code         = status.code;
-        r.code_text    = status.text;
-        r.http_version = status.version;
+        r.code = status.code;
+        r.code_text = std::string(status.text);
+        r.http_version = std::string(status.version);
 
         if (body_start < storage.size()) {
-            if(r.headers.get("transfer-encoding") == "chunked") {
-
-            }
-            else {
+            if(iequals(r.headers.get("transfer-encoding").to_string(), "chunked")) {
+                r.error_info = decode_chunked_body(storage, body_start, r.body);
+            } else {
                 auto body_span = storage.subspan(body_start);
                 r.body = slim::slim_storage_container(body_span.begin(), body_span.end());
             }
@@ -85,13 +122,7 @@ namespace {
 }
 
     Response::Response() {}
-
-    Response::Response(std::span<const uint8_t> storage) {
-        parse(*this, storage);
-    }
-
-    bool Response::has_error() const {
-        return error_info.has_error();
-    }
+    Response::Response(std::span<const uint8_t> storage) { parse(*this, storage); }
+    bool Response::has_error() const { return error_info.has_error(); }
 
 }
