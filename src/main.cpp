@@ -141,30 +141,36 @@ namespace {
         r.code_text    = std::string(status.text);
         r.http_version = std::string(status.version);
 
-        if (body_start < storage.size()) {
-            auto te = r.headers.get("transfer-encoding");
-            if (te && is_chunked_transfer(te.to_string())) {
+        auto te = r.headers.get("transfer-encoding");
+        if (te && is_chunked_transfer(te.to_string())) {
+            if (body_start < storage.size())
                 r.error_info = decode_chunked_body(storage, body_start, r.body);
-            } else {
-                auto body_span = storage.subspan(body_start);
-
-                // Validate Content-Length when present
-                auto cl_value = r.headers.get("content-length");
-                if (cl_value) {
-                    std::string_view cl = cl_value.to_string();
-                    size_t declared = 0;
-                    auto [ptr, ec]  = std::from_chars(cl.data(), cl.data() + cl.size(), declared);
-                    if (ec != std::errc{})
-                        r.error_info = slim::ErrorInfo(std::format("invalid Content-Length value: {}", cl));
-                    else if (body_span.size() < declared)
-                        r.error_info = slim::ErrorInfo(std::format(
-                            "Content-Length {} exceeds available body bytes {}", declared, body_span.size()));
-                    else
-                        body_span = body_span.subspan(0, declared);
-
-                    if (r.error_info.has_error()) return;
+        } else {
+            // Validate Content-Length when present — must happen regardless of
+            // whether any body bytes arrived, so truncated responses are caught.
+            auto cl_value = r.headers.get("content-length");
+            if (cl_value) {
+                std::string_view cl = cl_value.to_string();
+                size_t declared = 0;
+                auto [ptr, ec] = std::from_chars(cl.data(), cl.data() + cl.size(), declared);
+                if (ec != std::errc{}) {
+                    r.error_info = slim::ErrorInfo(std::format("invalid Content-Length value: {}", cl));
+                    return;
                 }
 
+                size_t available = storage.size() - body_start;
+                if (available < declared) {
+                    r.error_info = slim::ErrorInfo(std::format(
+                        "Content-Length {} exceeds available body bytes {}", declared, available));
+                    return;
+                }
+
+                if (declared > 0)
+                    r.body = slim::slim_storage_container(
+                        storage.data() + body_start,
+                        storage.data() + body_start + declared);
+            } else if (body_start < storage.size()) {
+                auto body_span = storage.subspan(body_start);
                 r.body = slim::slim_storage_container(body_span.begin(), body_span.end());
             }
         }

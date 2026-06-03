@@ -188,6 +188,32 @@ TEST_CASE("Invalid Content-Length value is an error", "[response]") {
     REQUIRE(response.has_error());
 }
 
+TEST_CASE("Non-zero Content-Length with no body bytes is an error", "[response]") {
+    // Headers received but body never arrived — must not silently succeed
+    std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n";
+    Response response(to_span(raw));
+    REQUIRE(response.has_error());
+}
+
+TEST_CASE("Content-Length zero with no body bytes is valid", "[response]") {
+    std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    Response response(to_span(raw));
+    if (response.has_error())
+        UNSCOPED_INFO(response.error_info.message());
+    REQUIRE_FALSE(response.has_error());
+    REQUIRE(response.body.empty());
+}
+
+TEST_CASE("Content-Length zero with body bytes produces empty body", "[response]") {
+    // Content-Length: 0 declares no body; trailing bytes are not consumed
+    std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\nignored";
+    Response response(to_span(raw));
+    if (response.has_error())
+        UNSCOPED_INFO(response.error_info.message());
+    REQUIRE_FALSE(response.has_error());
+    REQUIRE(response.body.empty());
+}
+
 // ---------------------------------------------------------------------------
 // Body — chunked
 // ---------------------------------------------------------------------------
