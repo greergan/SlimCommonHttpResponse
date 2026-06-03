@@ -32,14 +32,45 @@ namespace {
         return (end == std::string_view::npos) ? "" : s.substr(0, end + 1);
     }
 
-    // Helper to extract chunked body
-slim::ErrorInfo decode_chunked_body(std::span<const uint8_t> storage, size_t cursor, slim::slim_storage_container& out_body) {
+    std::string_view trim(std::string_view s) {
+        size_t start = s.find_first_not_of(" \t");
+        if (start == std::string_view::npos) return "";
+        size_t end = s.find_last_not_of(" \t");
+        return s.substr(start, end - start + 1);
+    }
+
+    // Returns true if transfer-encoding header indicates chunked transfer.
+    // Per RFC 7230 §3.3.1, "chunked" must be the final encoding in the list.
+    bool is_chunked_transfer(std::string_view header_value) {
+        std::string_view last_token;
+        size_t pos = 0;
+        while (pos < header_value.size()) {
+            size_t comma = header_value.find(',', pos);
+            std::string_view token = (comma == std::string_view::npos)
+                ? header_value.substr(pos)
+                : header_value.substr(pos, comma - pos);
+            token = trim(token);
+            if (!token.empty())
+                last_token = token;
+            if (comma == std::string_view::npos) break;
+            pos = comma + 1;
+        }
+        return iequals(last_token, "chunked");
+    }
+
+    slim::ErrorInfo decode_chunked_body(std::span<const uint8_t> storage, size_t cursor, slim::slim_storage_container& out_body) {
         while (cursor < storage.size()) {
             std::string_view rem(reinterpret_cast<const char*>(storage.data() + cursor), storage.size() - cursor);
             size_t line_end = rem.find("\r\n");
             if (line_end == std::string_view::npos) return slim::ErrorInfo("incomplete chunked encoding: missing CRLF");
 
+            // Strip chunk extensions (e.g. "a; ext=val") before parsing the hex size
             std::string_view chunk_line = rem.substr(0, line_end);
+            size_t ext = chunk_line.find(';');
+            if (ext != std::string_view::npos)
+                chunk_line = chunk_line.substr(0, ext);
+            chunk_line = trim(chunk_line);
+
             size_t chunk_size = 0;
             auto [ptr, ec] = std::from_chars(chunk_line.data(), chunk_line.data() + chunk_line.size(), chunk_size, 16);
             if (ec != std::errc{}) return slim::ErrorInfo(std::format("invalid chunk size hex: {}", chunk_line));
@@ -69,13 +100,13 @@ slim::ErrorInfo decode_chunked_body(std::span<const uint8_t> storage, size_t cur
 
         std::string_view after_version = line.substr(first_space + 1);
         size_t second_space = after_version.find(' ');
-        
+
         std::string_view code_sv;
         if (second_space == std::string_view::npos) {
-            code_sv = after_version;
-            out.text = ""; 
+            code_sv  = after_version;
+            out.text = "";
         } else {
-            code_sv = after_version.substr(0, second_space);
+            code_sv  = after_version.substr(0, second_space);
             out.text = trim_right(after_version.substr(second_space + 1));
         }
 
@@ -84,9 +115,9 @@ slim::ErrorInfo decode_chunked_body(std::span<const uint8_t> storage, size_t cur
         if (ec != std::errc{}) return slim::ErrorInfo(static_cast<int>(ec), std::format("failed to parse status code '{}'", code_sv));
         if (code < 100 || code > 599) return slim::ErrorInfo(std::format("response code out of range => {} should be > 99 and < 600", code));
 
-        out.version = line.substr(0, first_space);
-        out.code = code;
-        headers_start = line_end + 2;
+        out.version      = line.substr(0, first_space);
+        out.code         = code;
+        headers_start    = line_end + 2;
         return {};
     }
 
@@ -106,15 +137,34 @@ slim::ErrorInfo decode_chunked_body(std::span<const uint8_t> storage, size_t cur
         r.error_info = HWY_DYNAMIC_DISPATCH(parse_headers)(raw, headers_start, r.headers, body_start);
         if (r.error_info.has_error()) return;
 
-        r.code = status.code;
-        r.code_text = std::string(status.text);
+        r.code         = status.code;
+        r.code_text    = std::string(status.text);
         r.http_version = std::string(status.version);
 
         if (body_start < storage.size()) {
-            if(iequals(r.headers.get("transfer-encoding").to_string(), "chunked")) {
+            auto te = r.headers.get("transfer-encoding");
+            if (te && is_chunked_transfer(te.to_string())) {
                 r.error_info = decode_chunked_body(storage, body_start, r.body);
             } else {
                 auto body_span = storage.subspan(body_start);
+
+                // Validate Content-Length when present
+                auto cl_value = r.headers.get("content-length");
+                if (cl_value) {
+                    std::string_view cl = cl_value.to_string();
+                    size_t declared = 0;
+                    auto [ptr, ec]  = std::from_chars(cl.data(), cl.data() + cl.size(), declared);
+                    if (ec != std::errc{})
+                        r.error_info = slim::ErrorInfo(std::format("invalid Content-Length value: {}", cl));
+                    else if (body_span.size() < declared)
+                        r.error_info = slim::ErrorInfo(std::format(
+                            "Content-Length {} exceeds available body bytes {}", declared, body_span.size()));
+                    else
+                        body_span = body_span.subspan(0, declared);
+
+                    if (r.error_info.has_error()) return;
+                }
+
                 r.body = slim::slim_storage_container(body_span.begin(), body_span.end());
             }
         }

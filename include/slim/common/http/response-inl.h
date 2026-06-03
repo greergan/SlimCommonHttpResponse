@@ -95,6 +95,18 @@ HWY_ATTR slim::ErrorInfo parse_headers(
                     state       = State::scan_value;
                 }
                 else if (byte == '\r') {
+                    // An empty key means this \r\n is the blank terminator line.
+                    // Emit any in-progress header (key_start == pos means no key,
+                    // so there is nothing to emit), then expect \n and finish.
+                    if (pos == key_start) {
+                        // blank line — end of headers
+                        ++pos;
+                        if (pos >= size || data[pos] != '\n')
+                            return slim::ErrorInfo("malformed header terminator");
+                        body_start = pos + 1;
+                        return {};
+                    }
+                    // Non-empty line with no colon: malformed, skip it
                     state = State::seen_cr;
                     ++pos;
                 }
