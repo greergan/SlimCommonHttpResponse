@@ -1,2 +1,1 @@
-CPP_FLAGS -I/opt/vcpkg/installed/x64-linux/include
-LD_FLAGS -L/opt/vcpkg/installed/x64-linux/lib -lhwy
+LD_FLAGS -lhwy
