@@ -8,7 +8,6 @@
 #include "hwy/highway.h"
 
 #include <slim/common/http/headers.h>
-#include <slim/SlimValue.hpp>
 
 HWY_BEFORE_NAMESPACE();
 namespace slim::common::http {
