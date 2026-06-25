@@ -4,10 +4,9 @@
 #include <cstdint>
 #include <span>
 #include <string>
-#include <string_view>
+#include <vector>
 
 #include <slim/common/http/headers.h>
-#include <slim/SlimValue.hpp>
 
 #define SLIMCOMMONHTTPRESPONSE_VERSION  "@SLIMCOMMONHTTPRESPONSE_VERSION@"
 #define SLIMCOMMONHTTPRESPONSE_GIT_HASH "@SLIMCOMMONHTTPRESPONSE_GIT_HASH@"
@@ -15,16 +14,12 @@
 namespace slim::common::http {
     struct Response {
         Response();
-        Response(std::span<const uint8_t> storage);
-
-        bool has_error() const;
-
-        slim::slim_storage_container body;
-        int                          code         = 0;
-        std::string                  code_text;
-        std::string                  http_version;
-        Headers                      headers;
-        slim::ErrorInfo              error_info;
+        Response(std::span<uint8_t> storage);
+        int                          code_       = 0;
+        std::string                  code_text_;
+        std::string                  version_;
+        Headers                      headers_;
+        std::vector<uint8_t>         body_;
     };
 }
 

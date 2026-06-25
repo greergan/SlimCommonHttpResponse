@@ -1,2 +1,4 @@
 # PackageName [minVersion [maxVersion]]
+SlimCommonUtilities
+SlimCommonHttp
 SlimCommonHttpHeaders 0.9.2

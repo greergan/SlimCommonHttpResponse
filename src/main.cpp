@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <cctype>
 #include <vector>
+#include <slim/common/http/headers.h>
 #include <slim/common/http/response.h>
+#include <slim/common/utilities.h>
 
 namespace slim::common::http {
 
@@ -175,10 +177,10 @@ namespace {
             }
         }
     }
-}
+} // namesapce
 
     Response::Response() {}
     Response::Response(std::span<const uint8_t> storage) { parse(*this, storage); }
     bool Response::has_error() const { return error_info.has_error(); }
 
-}
+} // namespace slim::common::http
