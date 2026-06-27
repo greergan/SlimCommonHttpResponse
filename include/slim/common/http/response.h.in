@@ -1,26 +1,35 @@
 #ifndef SLIM_COMMON_HTTP_RESPONSE_H
 #define SLIM_COMMON_HTTP_RESPONSE_H
-
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
-
 #include <slim/common/http/headers.h>
-
 #define SLIMCOMMONHTTPRESPONSE_VERSION  "@SLIMCOMMONHTTPRESPONSE_VERSION@"
 #define SLIMCOMMONHTTPRESPONSE_GIT_HASH "@SLIMCOMMONHTTPRESPONSE_GIT_HASH@"
-
 namespace slim::common::http {
-    struct Response {
-        Response();
-        Response(std::span<uint8_t> storage);
-        int                          code_       = 0;
-        std::string                  code_text_;
-        std::string                  version_;
-        Headers                      headers_;
-        std::vector<uint8_t>         body_;
+    class Response {
+    public:
+        Response() = default;
+        Response(std::span<uint8_t> buf);
+
+        int                   code()      const noexcept { return code_; }
+        std::string_view      code_text() const noexcept { return code_text_; }
+        std::string_view      version()   const noexcept { return version_; }
+        Headers&              headers()   noexcept { return headers_; }
+        std::vector<uint8_t>& body()      noexcept { return body_; }
+
+        void code(int code)                         noexcept { code_      = code; }
+        void code_text(std::string_view code_text)  noexcept { code_text_ = code_text; }
+        void version(std::string_view version)      noexcept { version_   = version; }
+
+    private:
+        int                  code_       = 0;
+        std::string          code_text_;
+        std::string          version_;
+        Headers              headers_;
+        std::vector<uint8_t> body_;
     };
 }
-
 #endif

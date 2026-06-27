@@ -8,16 +8,17 @@
 #include "hwy/highway.h"
 
 #include <slim/common/http/headers.h>
+#include <slim/common/http/error_codes.h>
 
 HWY_BEFORE_NAMESPACE();
 namespace slim::common::http {
 namespace HWY_NAMESPACE {
 namespace hn = hwy::HWY_NAMESPACE;
 
-HWY_ATTR slim::ErrorInfo parse_headers(
+HWY_ATTR ErrorStatus parse_headers(
     std::string_view raw,
     size_t           start,
-    Headers&         out,
+    Headers&         h,
     size_t&          body_start)
 {
     enum class State : uint8_t {
@@ -44,24 +45,16 @@ HWY_ATTR slim::ErrorInfo parse_headers(
     size_t key_end     = start;
     size_t value_start = start;
 
-    auto emit_header = [&](size_t value_end) -> slim::ErrorInfo {
+    auto emit_header = [&](size_t value_end) -> ErrorStatus {
         std::string_view key   = raw.substr(key_start,   key_end   - key_start);
         std::string_view value = raw.substr(value_start, value_end - value_start);
 
-        while (!value.empty() && (value.back() == ' ' || value.back() == '\t'))
-            value.remove_suffix(1);
-
-        auto result = out.set(key, value);
-        if (!result)
-            return result.get_error();
-        return {};
+        while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.remove_suffix(1);
+        return h.set(key, value);
     };
 
     while (pos < size) {
-        if (pos + lanes <= size &&
-            (state == State::scan_key ||
-             state == State::scan_value)) {
-
+        if (pos + lanes <= size && (state == State::scan_key || state == State::scan_value)) {
             const auto chunk     = hn::LoadU(d, data + pos);
             const auto is_colon  = hn::Eq(chunk, v_colon);
             const auto is_cr     = hn::Eq(chunk, v_cr);
@@ -78,8 +71,7 @@ HWY_ATTR slim::ErrorInfo parse_headers(
             pos += static_cast<size_t>(first);
         }
 
-        if (pos >= size)
-            break;
+        if (pos >= size) break;
 
         const uint8_t byte = data[pos];
 
@@ -88,29 +80,22 @@ HWY_ATTR slim::ErrorInfo parse_headers(
                 if (byte == ':') {
                     key_end = pos;
                     ++pos;
-                    while (pos < size && (data[pos] == ' ' || data[pos] == '\t'))
-                        ++pos;
+                    while (pos < size && (data[pos] == ' ' || data[pos] == '\t')) ++pos;
                     value_start = pos;
                     state       = State::scan_value;
                 }
                 else if (byte == '\r') {
-                    // An empty key means this \r\n is the blank terminator line.
-                    // Emit any in-progress header (key_start == pos means no key,
-                    // so there is nothing to emit), then expect \n and finish.
                     if (pos == key_start) {
-                        // blank line — end of headers
                         ++pos;
-                        if (pos >= size || data[pos] != '\n')
-                            return slim::ErrorInfo("malformed header terminator");
+                        if (pos >= size || data[pos] != '\n') return ErrorStatus::ResponseHeadersTerminatorMalformed;
                         body_start = pos + 1;
-                        return {};
+                        return ErrorStatus::OK;
                     }
-                    // Non-empty line with no colon: malformed, skip it
                     state = State::seen_cr;
                     ++pos;
                 }
                 else if (byte == ' ' || byte == '\t') {
-                    return slim::ErrorInfo("obsolete line folding is not supported");
+                    return ErrorStatus::HeaderValueInvalidFolding;
                 }
                 else {
                     ++pos;
@@ -119,7 +104,7 @@ HWY_ATTR slim::ErrorInfo parse_headers(
 
             case State::scan_value:
                 if (byte == '\r') {
-                    if (auto e = emit_header(pos); e.has_error()) return e;
+                    if (auto e = emit_header(pos); e != ErrorStatus::OK) return e;
                     state = State::seen_cr;
                     ++pos;
                 }
@@ -141,22 +126,22 @@ HWY_ATTR slim::ErrorInfo parse_headers(
                     }
                 }
                 else {
-                    return slim::ErrorInfo("bare CR in headers");
+                    return ErrorStatus::ResponseHeadersBareCR;
                 }
                 break;
 
             case State::seen_crlf_cr:
                 if (byte == '\n') {
                     body_start = pos + 1;
-                    return {};
+                    return ErrorStatus::OK;
                 }
                 else {
-                    return slim::ErrorInfo("malformed header terminator");
+                    return ErrorStatus::ResponseHeadersTerminatorMalformed;
                 }
         }
     }
 
-    return slim::ErrorInfo("headers not terminated");
+    return ErrorStatus::ResponseHeadersNotTerminated;
 }
 }
 }
