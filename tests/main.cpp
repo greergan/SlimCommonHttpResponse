@@ -1,8 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <string>
 #include <string_view>
+#include <vector>
+#include <span>
 #include <slim/common/http/headers.h>
 #include <slim/common/http/response.h>
+#include <slim/common/http/error_codes.h>
 
 using namespace slim::common::http;
 
@@ -46,40 +49,40 @@ TEST_CASE("Status line parses valid response codes", "[response]") {
     SECTION("No reason phrase") {
         std::string raw = "HTTP/1.1 204\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.code() == 204);
-        REQUIRE(response.code_text().empty());
+        REQUIRE(response.code == 204);
+        REQUIRE(response.code_text.empty());
     }
 
     SECTION("1xx response code is valid") {
         std::string raw = "HTTP/1.1 100 Continue\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.code() == 100);
+        REQUIRE(response.code == 100);
     }
 
     SECTION("3xx response code is valid") {
         std::string raw = "HTTP/1.1 301 Moved Permanently\r\nLocation: https://example.com/\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.code() == 301);
+        REQUIRE(response.code == 301);
     }
 
     SECTION("4xx response code is valid") {
         std::string raw = "HTTP/1.1 404 Not Found\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.code() == 404);
+        REQUIRE(response.code == 404);
     }
 
     SECTION("5xx response code is valid") {
         std::string raw = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.code() == 500);
+        REQUIRE(response.code == 500);
     }
 
     SECTION("OK response sets version and code text") {
         std::string raw = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.version() == "HTTP/1.1");
-        REQUIRE(response.code() == 200);
-        REQUIRE(response.code_text() == "OK");
+        REQUIRE(response.version == "HTTP/1.1");
+        REQUIRE(response.code == 200);
+        REQUIRE(response.code_text == "OK");
     }
 }
 
@@ -93,8 +96,8 @@ TEST_CASE("Identity body with Content-Length", "[response]") {
         std::string raw  = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\n" + body;
 
         Response response(to_span(raw));
-        REQUIRE(response.code() == 200);
-        std::string body_str(response.body().begin(), response.body().end());
+        REQUIRE(response.code == 200);
+        std::string body_str(response.body.begin(), response.body.end());
         REQUIRE(body_str == body);
     }
 
@@ -106,7 +109,7 @@ TEST_CASE("Identity body with Content-Length", "[response]") {
     SECTION("Content-Length smaller than body trims to declared length") {
         std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello, World!";
         Response response(to_span(raw));
-        std::string body_str(response.body().begin(), response.body().end());
+        std::string body_str(response.body.begin(), response.body.end());
         REQUIRE(body_str == "Hello");
     }
 
@@ -123,13 +126,13 @@ TEST_CASE("Identity body with Content-Length", "[response]") {
     SECTION("Content-Length zero with no body bytes is valid") {
         std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
         Response response(to_span(raw));
-        REQUIRE(response.body().empty());
+        REQUIRE(response.body.empty());
     }
 
     SECTION("Content-Length zero with body bytes produces empty body") {
         std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\nignored";
         Response response(to_span(raw));
-        REQUIRE(response.body().empty());
+        REQUIRE(response.body.empty());
     }
 }
 
@@ -160,7 +163,7 @@ TEST_CASE("Chunked transfer encoding", "[response]") {
         std::vector<uint8_t> expected_body = {60,104,116,109,108,62,60,47,104,116,109,108,62,
                                               60,104,116,109,108,62,60,47,104,116,109,108,62};
         Response response(to_span(raw));
-        REQUIRE(response.body() == expected_body);
+        REQUIRE(response.body == expected_body);
     }
 
     SECTION("Transfer-Encoding chunked complex example") {
@@ -189,7 +192,7 @@ TEST_CASE("Chunked transfer encoding", "[response]") {
         std::vector<uint8_t> expected_body(html_body.begin(), html_body.end());
 
         Response response(to_span(raw));
-        REQUIRE(response.body() == expected_body);
+        REQUIRE(response.body == expected_body);
     }
 
     SECTION("Chunk extensions are ignored") {
@@ -204,38 +207,35 @@ TEST_CASE("Chunked transfer encoding", "[response]") {
 
         std::string expected = "<html></html>";
         Response response(to_span(raw));
-        std::string body_str(response.body().begin(), response.body().end());
+        std::string body_str(response.body.begin(), response.body.end());
         REQUIRE(body_str == expected);
     }
 
     SECTION("Transfer-Encoding list with chunked as final encoding") {
-            // RFC 7230 §3.3.1: chunked must be the last transfer-encoding
-            std::string raw =
-                "HTTP/1.1 200 OK\r\n"
-                "Transfer-Encoding: gzip, chunked\r\n"
-                "\r\n"
-                "d\r\n"
-                "<html></html>\r\n"
-                "0\r\n"
-                "\r\n";
+        std::string raw =
+            "HTTP/1.1 200 OK\r\n"
+            "Transfer-Encoding: gzip, chunked\r\n"
+            "\r\n"
+            "d\r\n"
+            "<html></html>\r\n"
+            "0\r\n"
+            "\r\n";
 
-            Response response(to_span(raw));
+        Response response(to_span(raw));
 
-            // Output the value of each parsed token for debugging
-            if (auto te_h = response.headers().get("transfer-encoding"); te_h) {
-                UNSCOPED_INFO("--- Transfer-Encoding Tokens ---");
-                for (const auto& val : te_h->get_value()) {
-                    UNSCOPED_INFO("[" << val << "]");
-                }
-            } else {
-                UNSCOPED_INFO("Transfer-Encoding header not found!");
+        // Note: Preserved debugging section; adjust .get() interface signature based on your actual Headers class implementation details
+        if (auto te_h = response.headers.get("transfer-encoding"); te_h) {
+            UNSCOPED_INFO("--- Transfer-Encoding Tokens ---");
+            for (const auto& val : te_h->get_value()) {
+                UNSCOPED_INFO("[" << val << "]");
             }
-
-            // Body bytes are the raw (still gzip-compressed) chunk payload —
-            // decompression is out of scope, but chunked framing must be decoded.
-            std::string body_str(response.body().begin(), response.body().end());
-            REQUIRE(body_str == "<html></html>");
+        } else {
+            UNSCOPED_INFO("Transfer-Encoding header not found!");
         }
+
+        std::string body_str(response.body.begin(), response.body.end());
+        REQUIRE(body_str == "<html></html>");
+    }
 
     SECTION("Transfer-Encoding with chunked not last is not decoded as chunked") {
         std::string raw =
@@ -245,7 +245,7 @@ TEST_CASE("Chunked transfer encoding", "[response]") {
             "some raw body bytes\r\n";
 
         Response response(to_span(raw));
-        std::string body_str(response.body().begin(), response.body().end());
+        std::string body_str(response.body.begin(), response.body.end());
         REQUIRE(body_str == "some raw body bytes\r\n");
     }
 

@@ -9,27 +9,18 @@
 #define SLIMCOMMONHTTPRESPONSE_VERSION  "@SLIMCOMMONHTTPRESPONSE_VERSION@"
 #define SLIMCOMMONHTTPRESPONSE_GIT_HASH "@SLIMCOMMONHTTPRESPONSE_GIT_HASH@"
 namespace slim::common::http {
-    class Response {
-    public:
-        Response() = default;
-        Response(std::span<uint8_t> buf);
+    struct Response {
+            Headers              headers;
+            std::string          version;
+            std::string          code_text;
+            int                  code       = 0;
+            std::vector<uint8_t> body;
 
-        int                   code()      const noexcept { return code_; }
-        std::string_view      code_text() const noexcept { return code_text_; }
-        std::string_view      version()   const noexcept { return version_; }
-        Headers&              headers()   noexcept { return headers_; }
-        std::vector<uint8_t>& body()      noexcept { return body_; }
+            Response() = default;
+            Response(std::span<uint8_t> buf);
 
-        void code(int code)                         noexcept { code_      = code; }
-        void code_text(std::string_view code_text)  noexcept { code_text_ = code_text; }
-        void version(std::string_view version)      noexcept { version_   = version; }
-
-    private:
-        int                  code_       = 0;
-        std::string          code_text_;
-        std::string          version_;
-        Headers              headers_;
-        std::vector<uint8_t> body_;
-    };
+            ErrorStatus parse(std::span<const uint8_t> buf);
+            ErrorStatus parse_status_line(std::string_view s, size_t& headers_start);
+        };
 }
 #endif

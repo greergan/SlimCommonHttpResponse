@@ -15,12 +15,7 @@ namespace slim::common::http {
 namespace HWY_NAMESPACE {
 namespace hn = hwy::HWY_NAMESPACE;
 
-HWY_ATTR ErrorStatus parse_headers(
-    std::string_view raw,
-    size_t           start,
-    Headers&         h,
-    size_t&          body_start)
-{
+HWY_ATTR ErrorStatus parse_headers(std::string_view raw, size_t start, Headers& h, size_t& body_start) {
     enum class State : uint8_t {
         scan_key,
         scan_value,
@@ -48,19 +43,20 @@ HWY_ATTR ErrorStatus parse_headers(
     auto emit_header = [&](size_t value_end) -> ErrorStatus {
         std::string_view key   = raw.substr(key_start,   key_end   - key_start);
         std::string_view value = raw.substr(value_start, value_end - value_start);
-
-        while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.remove_suffix(1);
         return h.set(key, value);
     };
 
     while (pos < size) {
         if (pos + lanes <= size && (state == State::scan_key || state == State::scan_value)) {
-            const auto chunk     = hn::LoadU(d, data + pos);
-            const auto is_colon  = hn::Eq(chunk, v_colon);
-            const auto is_cr     = hn::Eq(chunk, v_cr);
-            const auto is_lf     = hn::Eq(chunk, v_lf);
-            const auto is_ws     = hn::Or(hn::Eq(chunk, v_space), hn::Eq(chunk, v_tab));
-            const auto is_any    = hn::Or(hn::Or(is_colon, is_cr), hn::Or(is_lf, is_ws));
+            const auto chunk = hn::LoadU(d, data + pos);
+            auto is_any = hn::Or(hn::Eq(chunk, v_cr), hn::Eq(chunk, v_lf));
+
+            if (state == State::scan_key) {
+                const auto is_colon = hn::Eq(chunk, v_colon);
+                const auto is_ws    = hn::Or(hn::Eq(chunk, v_space), hn::Eq(chunk, v_tab));
+                is_any = hn::Or(is_any, hn::Or(is_colon, is_ws));
+            }
+
             const intptr_t first = hn::FindFirstTrue(d, is_any);
 
             if (first < 0) {
@@ -94,12 +90,8 @@ HWY_ATTR ErrorStatus parse_headers(
                     state = State::seen_cr;
                     ++pos;
                 }
-                else if (byte == ' ' || byte == '\t') {
-                    return ErrorStatus::HeaderValueInvalidFolding;
-                }
-                else {
-                    ++pos;
-                }
+                else if (byte == ' ' || byte == '\t') return ErrorStatus::HeaderValueInvalidFolding;
+                else ++pos;
                 break;
 
             case State::scan_value:
@@ -108,9 +100,7 @@ HWY_ATTR ErrorStatus parse_headers(
                     state = State::seen_cr;
                     ++pos;
                 }
-                else {
-                    ++pos;
-                }
+                else ++pos;
                 break;
 
             case State::seen_cr:
@@ -125,9 +115,7 @@ HWY_ATTR ErrorStatus parse_headers(
                         state     = State::scan_key;
                     }
                 }
-                else {
-                    return ErrorStatus::ResponseHeadersBareCR;
-                }
+                else return ErrorStatus::ResponseHeadersBareCR;
                 break;
 
             case State::seen_crlf_cr:
@@ -135,9 +123,7 @@ HWY_ATTR ErrorStatus parse_headers(
                     body_start = pos + 1;
                     return ErrorStatus::OK;
                 }
-                else {
-                    return ErrorStatus::ResponseHeadersTerminatorMalformed;
-                }
+                else return ErrorStatus::ResponseHeadersTerminatorMalformed;
         }
     }
 

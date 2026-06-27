@@ -16,10 +16,9 @@ CI/CD supplied by unified workflows provided by [SlimLibraryPackager](https://co
 - [Core API](#core-api)
   - [ErrorStatus enum](#errorstatus-enum)
   - [ResponseParseException](#responseparseexception)
-  - [Response class](#response-class)
+  - [Response struct](#response-struct)
   - [Constructors and object lifetime](#constructors-and-object-lifetime)
-  - [Getters](#getters)
-  - [Setters](#setters)
+  - [Members](#members)
 - [Building](#building)
 - [Dependencies](#dependencies)
   - [required_packages](#required_packages)
@@ -74,7 +73,7 @@ Values are grouped by concern:
 
 [↑ Top](#table-of-contents)
 
-### Response class
+### Response struct
 
 ```cpp
 slim::common::http::Response r(buf);
@@ -91,27 +90,15 @@ slim::common::http::Response r(buf);
 
 [↑ Top](#table-of-contents)
 
-### Getters
+### Members
 
-| Method | Returns |
-|--------|---------|
-| `int code() const noexcept` | HTTP status code (e.g. `200`, `404`) |
-| `std::string_view code_text() const noexcept` | Reason phrase (e.g. `"OK"`, `"Not Found"`) |
-| `std::string_view version() const noexcept` | HTTP version string (e.g. `"HTTP/1.1"`) |
-| `Headers& headers() noexcept` | Reference to the parsed headers collection |
-| `std::vector<uint8_t>& body() noexcept` | Reference to the decoded body bytes |
-
-[↑ Top](#table-of-contents)
-
-### Setters
-
-| Method | Description |
-|--------|-------------|
-| `void code(int code) noexcept` | Set the status code directly |
-| `void code_text(std::string_view code_text) noexcept` | Set the reason phrase directly |
-| `void version(std::string_view version) noexcept` | Set the HTTP version string directly |
-
-Setters are provided primarily for use by `CookieStore` and related SlimCommon components that build responses programmatically rather than by parsing.
+| Member | Type | Description |
+|--------|------|-------------|
+| `headers` | `Headers` | Parsed headers collection |
+| `version` | `std::string` | HTTP version string (e.g. `"HTTP/1.1"`) |
+| `code_text` | `std::string` | Reason phrase (e.g. `"OK"`, `"Not Found"`) |
+| `code` | `int` | HTTP status code (e.g. `200`, `404`), default `0` |
+| `body` | `std::vector<uint8_t>` | Decoded body bytes |
 
 [↑ Top](#table-of-contents)
 
@@ -171,8 +158,8 @@ try {
     std::vector<uint8_t> buf = /* received from network */;
     slim::common::http::Response r(std::span<uint8_t>(buf));
 
-    std::cout << r.code() << ' ' << r.code_text() << '\n'; // -> "200 OK"
-    std::cout << r.version() << '\n';                       // -> "HTTP/1.1"
+    std::cout << r.code << ' ' << r.code_text << '\n'; // -> "200 OK"
+    std::cout << r.version << '\n';                     // -> "HTTP/1.1"
 }
 catch (const slim::common::http::ResponseParseException& e) {
     std::cerr << "Parse failed: " << e.what() << '\n';
@@ -184,7 +171,7 @@ catch (const slim::common::http::ResponseParseException& e) {
 try {
     slim::common::http::Response r(std::span<uint8_t>(buf));
 
-    if (auto ct = r.headers().get("content-type"); ct) {
+    if (auto ct = r.headers.get("content-type"); ct) {
         std::cout << ct->get_value()[0] << '\n'; // -> "application/json"
     }
 }
@@ -198,7 +185,7 @@ catch (const slim::common::http::ResponseParseException& e) {
 try {
     slim::common::http::Response r(std::span<uint8_t>(buf));
 
-    const auto& body = r.body();
+    const auto& body = r.body;
     std::string_view body_text(reinterpret_cast<const char*>(body.data()), body.size());
     std::cout << body_text << '\n';
 }
@@ -220,7 +207,7 @@ try {
     if (status != ErrorStatus::OK) return status;
 
     slim::common::http::Response r(std::span<uint8_t>(buf));
-    std::cout << r.code() << ' ' << r.code_text() << '\n';
+    std::cout << r.code << ' ' << r.code_text << '\n';
 }
 catch (const slim::common::network::NetworkException& e) {
     std::cerr << "Connection failed: " << e.what() << '\n';
@@ -233,9 +220,9 @@ catch (const slim::common::http::ResponseParseException& e) {
 ```cpp
 // Build a response programmatically (no parsing)
 slim::common::http::Response r;
-r.version("HTTP/1.1");
-r.code(200);
-r.code_text("OK");
+r.version   = "HTTP/1.1";
+r.code      = 200;
+r.code_text = "OK";
 ```
 
 [↑ Top](#table-of-contents)
